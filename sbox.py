@@ -45,6 +45,10 @@ Rcon = (
     0xD4, 0xB3, 0x7D, 0xFA, 0xEF, 0xC5, 0x91, 0x39,
 )
 
+RconWord = np.zeros([32, 4], dtype=np.uint8)
+RconWord[:, 0] = np.array(Rcon, dtype=np.uint8)
+print(RconWord)
+
 M1 = np.arange(256)
 
 M2 = np.array([

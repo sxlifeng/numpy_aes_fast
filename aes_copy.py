@@ -3,17 +3,19 @@ import time
 from enum import Enum
 
 import numpy as np
-from sbox import InvSbox, Rcon, SBOX
+from sbox import InvSbox, Rcon, SBOX, RconWord
 from sbox import M1, M2, M3, M9, M11, M13, M14
 
 
 class AesType(Enum):
-    AES128 = (128, 10)
-    AES192 = (192, 12)
-    AES256 = (256, 14)
+    AES128 = (128, 4, 10)
+    AES192 = (192, 6, 12)
+    AES256 = (256, 8, 14)
 
-    def __init__(self, key_bits, rounds):
+    def __init__(self, key_bits, key_words, rounds):
         self.key_bits = key_bits
+        self.key_words = key_words
+        self.nk = key_words
         self.rounds = rounds
 
 
@@ -84,22 +86,46 @@ def keySchedule(key, aes_type: AesType = AesType.AES128):
     # if len(key) != 16:
     #     raise ValueError("Only key with 16 byte length supported!")
 
-    r0 = key.reshape((4, 4)).tolist()
-    for i in range(4, 4 * (aes_type.rounds + 1)):
+    r0 = key.reshape((aes_type.key_words, 4)).tolist()
+    for i in range(aes_type.key_words, 4 * (aes_type.rounds + 1)):
         r0.append([])
 
-        if i % 4 == 0:
-            byte = r0[i - 4][0] ^ SBOX[r0[i - 1][1]] ^ Rcon[i // 4]
+        if i % aes_type.key_words == 0:
+            byte = r0[i - aes_type.nk][0] ^ SBOX[r0[i - 1][1]] ^ Rcon[i // aes_type.nk]
             r0[i].append(byte)
 
             for j in range(1, 4):
-                byte = r0[i - 4][j] ^ SBOX[r0[i - 1][(j + 1) % 4]]
+                byte = r0[i - aes_type.nk][j] ^ SBOX[r0[i - 1][(j + 1) % 4]]
+                r0[i].append(byte)
+        elif aes_type.key_words > 6 and i % aes_type.key_words == 4:
+            for j in range(0, 4):
+                byte = SBOX[r0[i - 1][j]] ^ r0[i - aes_type.nk][j]
                 r0[i].append(byte)
         else:
             for j in range(4):
-                byte = r0[i - 4][j] ^ r0[i - 1][j]
+                byte = r0[i - aes_type.nk][j] ^ r0[i - 1][j]
                 r0[i].append(byte)
     return np.array(r0).reshape((-1, 4, 4))
+
+
+def keySchedule1(key, aes_type: AesType = AesType.AES128):
+    # if len(key) != 16:
+    #     raise ValueError("Only key with 16 byte length supported!")
+
+    r0 = key.reshape([-1, aes_type.nk, 4])
+    round_key = np.zeros([r0.shape[0], 4 * (aes_type.rounds + 1), 4], dtype=np.uint8)
+    round_key[:, :aes_type.nk, :] = r0
+    for i in range(aes_type.nk, 4 * (aes_type.rounds + 1)):
+        # round_key[:, i, x]
+        if i % aes_type.nk == 0:
+            temp = SBOX[np.roll(round_key[:, i - 1, :], -1, axis=1)] ^ RconWord[i // aes_type.nk, :]
+            round_key[:, i, :] = temp ^ round_key[:, i - aes_type.nk, :]
+        elif aes_type.key_words > 6 and i % aes_type.key_words == 4:
+            round_key[:, i, :] = np.bitwise_xor(SBOX[round_key[:, i - 1, :]], round_key[:, i - aes_type.nk, :])
+        else:
+            round_key[:, i, :] = np.bitwise_xor(round_key[:, i - 1, :], round_key[:, i - aes_type.nk, :])
+
+    return round_key((-1, aes_type.rounds + 1, 4, 4))
 
 
 def addRoundKey(state, key):
@@ -171,17 +197,28 @@ def aes_decrypt(cipher, key):
 
 
 def test_hex_data():
-    key = "2b7e151628aed2a6abf7158809cf4f3c"
+    key = "2b7e151628aed2a6abf7158809cf4f3c2b7e151628aed2a6abf7158809cf4f3c"
     key = np.frombuffer(int.to_bytes(int(key, 16), len(key) // 2, byteorder='big'), dtype=np.uint8)
+    keySchedule1(key)
 
     plain = "3243f6a8885a308d313198a2e0370734"
     aes_type = AesType.AES128
 
-    # key = "8E73B0F7 DA0E6452 C810F32B 809079E5 62F8EAD2 522C6B7B".replace(' ', '')
-    #
-    # plain = "6BC1BEE2 2E409F96 E93D7E11 7393172A AE2D8A57 1E03AC9C 9EB76FAC 45AF8E51 30C81C46 A35CE411 E5FBC119 1A0A52EF F69F2445 DF4F9B17 AD2B417B E66C3710".replace(' ', '')
-    # ref_cipher = "BD334F1D 6E45F25F F712A214 571FA5CC 97410484 6D0AD3AD 7734ECB3 ECEE4EEF EF7AFD22 70E2E60A DCE0BA2F ACE6444E 9A4B41BA 738D6C72 FB166916 03C18E0E".replace(' ', '')
-    # aes_type = AesType.AES192
+
+
+    key = "8E73B0F7 DA0E6452 C810F32B 809079E5 62F8EAD2 522C6B7B".replace(' ', '')
+    key = np.frombuffer(int.to_bytes(int(key, 16), len(key) // 2, byteorder='big'), dtype=np.uint8)
+    plain = "6BC1BEE2 2E409F96 E93D7E11 7393172A AE2D8A57 1E03AC9C 9EB76FAC 45AF8E51 30C81C46 A35CE411 E5FBC119 1A0A52EF F69F2445 DF4F9B17 AD2B417B E66C3710".replace(' ', '')
+    ref_cipher = "BD334F1D 6E45F25F F712A214 571FA5CC 97410484 6D0AD3AD 7734ECB3 ECEE4EEF EF7AFD22 70E2E60A DCE0BA2F ACE6444E 9A4B41BA 738D6C72 FB166916 03C18E0E".replace(' ', '')
+    aes_type = AesType.AES192
+
+    key = "603DEB10 15CA71BE 2B73AEF0 857D7781 1F352C07 3B6108D7 2D9810A3 0914DFF4".replace(' ', '')
+    key = np.frombuffer(int.to_bytes(int(key, 16), len(key) // 2, byteorder='big'), dtype=np.uint8)
+    plain = "6BC1BEE2 2E409F96 E93D7E11 7393172A AE2D8A57 1E03AC9C 9EB76FAC 45AF8E51 30C81C46 A35CE411 E5FBC119 1A0A52EF F69F2445 DF4F9B17 AD2B417B E66C3710".replace(
+        ' ', '')
+    ref_cipher = " F3EED1BD B5D2A03C 064B5A7E 3DB181F8 591CCB10 D410ED26 DC5BA74A 31362870 B6ED21B9 9CA6F4F9 F153E7B1 BEAFED1D 23304B7A 39F9F3FF 067D8D8F 9E24ECC7".replace(
+        ' ', '')
+    aes_type = AesType.AES256
 
     # key = "000102030405060708090A0B0C0D0E0F"
     # plain = "d042c8fcd0351e1a1e9ad5c0c0c55afc3243f6a8885a308d313198a2e0370734"
@@ -195,8 +232,8 @@ def test_hex_data():
     # mid[AesMidType.SBOX_IN].reshape([10, -1, 16]).transpose([1, 0, 2]).reshape([2, -1])
     print(time.time() - start)
     start = time.time()
-    p = aes_decrypt(c, key)
-    print(time.time() - start)
+    # p = aes_decrypt(c, key)
+    # print(time.time() - start)
     print(bytes(c).hex())
 
 
