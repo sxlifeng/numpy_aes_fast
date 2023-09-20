@@ -125,7 +125,7 @@ def keySchedule1(key, aes_type: AesType = AesType.AES128):
         else:
             round_key[:, i, :] = np.bitwise_xor(round_key[:, i - 1, :], round_key[:, i - aes_type.nk, :])
 
-    return round_key((-1, aes_type.rounds + 1, 4, 4))
+    return round_key.reshape([-1, aes_type.rounds + 1, 4, 4])
 
 
 def addRoundKey(state, key):
@@ -133,14 +133,14 @@ def addRoundKey(state, key):
 
 
 def aes_encrypt(data, key, aes_type: AesType = AesType.AES128):
-    roundKey = keySchedule(key, aes_type)
+    roundKey = keySchedule1(key, aes_type)
     state = data.reshape([-1, 4, 4])
-    s0 = addRoundKey(state, roundKey[0])
+    s0 = addRoundKey(state, roundKey[:, 0])
     for i in range(1, aes_type.rounds + 1):
         s1 = subBytes(s0)
         s2 = lShiftRows(s1)
         s3 = mixColumn(s2) if i != aes_type.rounds else s2
-        s0 = addRoundKey(s3, roundKey[i])
+        s0 = addRoundKey(s3, roundKey[:, i])
     s4 = s0.ravel().astype(np.uint8)
     return s4
 
@@ -197,28 +197,28 @@ def aes_decrypt(cipher, key):
 
 
 def test_hex_data():
-    key = "2b7e151628aed2a6abf7158809cf4f3c2b7e151628aed2a6abf7158809cf4f3c"
+    key = "2b7e151628aed2a6abf7158809cf4f3c3243f6a8885a308d313198a2e0370734"
     key = np.frombuffer(int.to_bytes(int(key, 16), len(key) // 2, byteorder='big'), dtype=np.uint8)
-    keySchedule1(key)
+    # keySchedule1(key)
 
-    plain = "3243f6a8885a308d313198a2e0370734"
+    plain = "3243f6a8885a308d313198a2e03707343243f6a8885a308d313198a2e0370734"
     aes_type = AesType.AES128
 
 
 
-    key = "8E73B0F7 DA0E6452 C810F32B 809079E5 62F8EAD2 522C6B7B".replace(' ', '')
-    key = np.frombuffer(int.to_bytes(int(key, 16), len(key) // 2, byteorder='big'), dtype=np.uint8)
-    plain = "6BC1BEE2 2E409F96 E93D7E11 7393172A AE2D8A57 1E03AC9C 9EB76FAC 45AF8E51 30C81C46 A35CE411 E5FBC119 1A0A52EF F69F2445 DF4F9B17 AD2B417B E66C3710".replace(' ', '')
-    ref_cipher = "BD334F1D 6E45F25F F712A214 571FA5CC 97410484 6D0AD3AD 7734ECB3 ECEE4EEF EF7AFD22 70E2E60A DCE0BA2F ACE6444E 9A4B41BA 738D6C72 FB166916 03C18E0E".replace(' ', '')
-    aes_type = AesType.AES192
-
-    key = "603DEB10 15CA71BE 2B73AEF0 857D7781 1F352C07 3B6108D7 2D9810A3 0914DFF4".replace(' ', '')
-    key = np.frombuffer(int.to_bytes(int(key, 16), len(key) // 2, byteorder='big'), dtype=np.uint8)
-    plain = "6BC1BEE2 2E409F96 E93D7E11 7393172A AE2D8A57 1E03AC9C 9EB76FAC 45AF8E51 30C81C46 A35CE411 E5FBC119 1A0A52EF F69F2445 DF4F9B17 AD2B417B E66C3710".replace(
-        ' ', '')
-    ref_cipher = " F3EED1BD B5D2A03C 064B5A7E 3DB181F8 591CCB10 D410ED26 DC5BA74A 31362870 B6ED21B9 9CA6F4F9 F153E7B1 BEAFED1D 23304B7A 39F9F3FF 067D8D8F 9E24ECC7".replace(
-        ' ', '')
-    aes_type = AesType.AES256
+    # key = "8E73B0F7 DA0E6452 C810F32B 809079E5 62F8EAD2 522C6B7B".replace(' ', '')
+    # key = np.frombuffer(int.to_bytes(int(key, 16), len(key) // 2, byteorder='big'), dtype=np.uint8)
+    # plain = "6BC1BEE2 2E409F96 E93D7E11 7393172A AE2D8A57 1E03AC9C 9EB76FAC 45AF8E51 30C81C46 A35CE411 E5FBC119 1A0A52EF F69F2445 DF4F9B17 AD2B417B E66C3710".replace(' ', '')
+    # ref_cipher = "BD334F1D 6E45F25F F712A214 571FA5CC 97410484 6D0AD3AD 7734ECB3 ECEE4EEF EF7AFD22 70E2E60A DCE0BA2F ACE6444E 9A4B41BA 738D6C72 FB166916 03C18E0E".replace(' ', '')
+    # aes_type = AesType.AES192
+    #
+    # key = "603DEB10 15CA71BE 2B73AEF0 857D7781 1F352C07 3B6108D7 2D9810A3 0914DFF4".replace(' ', '')
+    # key = np.frombuffer(int.to_bytes(int(key, 16), len(key) // 2, byteorder='big'), dtype=np.uint8)
+    # plain = "6BC1BEE2 2E409F96 E93D7E11 7393172A AE2D8A57 1E03AC9C 9EB76FAC 45AF8E51 30C81C46 A35CE411 E5FBC119 1A0A52EF F69F2445 DF4F9B17 AD2B417B E66C3710".replace(
+    #     ' ', '')
+    # ref_cipher = " F3EED1BD B5D2A03C 064B5A7E 3DB181F8 591CCB10 D410ED26 DC5BA74A 31362870 B6ED21B9 9CA6F4F9 F153E7B1 BEAFED1D 23304B7A 39F9F3FF 067D8D8F 9E24ECC7".replace(
+    #     ' ', '')
+    # aes_type = AesType.AES256
 
     # key = "000102030405060708090A0B0C0D0E0F"
     # plain = "d042c8fcd0351e1a1e9ad5c0c0c55afc3243f6a8885a308d313198a2e0370734"
